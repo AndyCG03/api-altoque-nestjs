@@ -3,7 +3,7 @@ import { HttpModule } from '@nestjs/axios';
 import { TasasController } from './tasas.controller';
 import { TasasService } from './tasas.service';
 import { TasasHistoryService } from './tasas-history.service';
-import { PrismaService } from '../prisma.service';
+import { DatabaseService } from '../database.service';
 import { TasasCronService } from './tasas-cron.service';
 
 @Module({
@@ -13,6 +13,6 @@ import { TasasCronService } from './tasas-cron.service';
     }),
   ],
   controllers: [TasasController],
-  providers: [TasasService, TasasHistoryService, TasasCronService, PrismaService],
+  providers: [TasasService, TasasHistoryService, TasasCronService, DatabaseService],
 })
 export class TasasModule {}

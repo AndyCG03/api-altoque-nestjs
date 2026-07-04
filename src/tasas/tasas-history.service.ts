@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma.service';
+import { DatabaseService } from '../database.service';
 
 export interface TasaHistoricaPunto {
   fecha: Date;
@@ -9,7 +8,7 @@ export interface TasaHistoricaPunto {
 
 @Injectable()
 export class TasasHistoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly databaseService: DatabaseService) {}
 
   async guardarSnapshot(
     snapshotDate: Date,
@@ -20,37 +19,38 @@ export class TasasHistoryService {
       .map(([moneda, valor]) => ({
         moneda,
         valor,
-        fecha: snapshotDate,
+        fecha: snapshotDate.toISOString(),
       }));
 
     if (entries.length === 0) {
       return { created: 0 };
     }
 
-    await this.prisma.tasaHistorica.createMany({
-      data: entries,
-    });
+    const insert = this.databaseService.db.prepare(
+      'INSERT INTO tasas_historica (moneda, valor, fecha) VALUES (?, ?, ?)',
+    );
+
+    const insertMany = this.databaseService.db.transaction(
+      (rows: { moneda: string; valor: number; fecha: string }[]) => {
+        for (const row of rows) {
+          insert.run(row.moneda, row.valor, row.fecha);
+        }
+      },
+    );
+
+    insertMany(entries);
 
     return { created: entries.length };
   }
 
   async getHistorial(moneda: string, desde: Date, hasta: Date) {
-    return this.prisma.tasaHistorica.findMany({
-      where: {
-        moneda,
-        fecha: {
-          gte: desde,
-          lte: hasta,
-        },
-      },
-      orderBy: {
-        fecha: 'asc',
-      },
-      select: {
-        fecha: true,
-        valor: true,
-      },
-    });
+    const filas = this.databaseService.db
+      .prepare(
+        'SELECT fecha, valor FROM tasas_historica WHERE moneda = ? AND fecha BETWEEN ? AND ? ORDER BY fecha ASC',
+      )
+      .all(moneda, desde.toISOString(), hasta.toISOString()) as { fecha: string; valor: number }[];
+
+    return filas.map((f) => ({ fecha: new Date(f.fecha), valor: f.valor }));
   }
 
   async getVariacion(moneda: string, desde: Date, hasta: Date) {
@@ -75,9 +75,10 @@ export class TasasHistoryService {
   }
 
   async existeRegistro(moneda: string, fecha: Date) {
-    return this.prisma.tasaHistorica.findFirst({
-      where: { moneda, fecha },
-      select: { id: true },
-    });
+    const row = this.databaseService.db
+      .prepare('SELECT id FROM tasas_historica WHERE moneda = ? AND fecha = ? LIMIT 1')
+      .get(moneda, fecha.toISOString()) as { id: number } | undefined;
+
+    return row ?? null;
   }
 }
