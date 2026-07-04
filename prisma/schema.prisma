@@ -1,0 +1,18 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model TasaHistorica {
+  id        Int      @id @default(autoincrement())
+  moneda    String
+  valor     Float
+  fecha     DateTime
+  createdAt DateTime @default(now())
+
+  @@index([moneda, fecha])
+}
