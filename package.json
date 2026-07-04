@@ -4,6 +4,7 @@
   "description": "API NestJS que redirige/proxya peticiones hacia https://tasas.eltoque.com",
   "scripts": {
     "build": "nest build",
+    "postinstall": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main"
