@@ -7,39 +7,34 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { TasasHistoryService } from './tasas-history.service';
-import { TasasService } from './tasas.service';
 
 @ApiTags('tasas')
 @Controller('tasas')
 export class TasasController {
-  constructor(
-    private readonly tasasService: TasasService,
-    private readonly tasasHistoryService: TasasHistoryService,
-  ) {}
+  constructor(private readonly tasasHistoryService: TasasHistoryService) {}
 
   @ApiOperation({
-    summary: 'Obtener tasas del elTOQUE',
+    summary: 'Obtener las últimas tasas guardadas',
     description:
-      'Reenvía la consulta a la API de elTOQUE. Si no se envían fechas, devuelve las tasas de las últimas 24 horas.',
+      'Devuelve el snapshot más reciente guardado en la base de datos. Ya no consulta a elTOQUE en tiempo real; los datos se actualizan cada 5 minutos por un cron job interno.',
   })
-  @ApiQuery({
-    name: 'date_from',
-    required: false,
-    description: 'Fecha inicial en formato compatible con elTOQUE.',
-    example: '2026-05-27 00:00:01',
+  @ApiOkResponse({
+    description: 'Último snapshot de tasas guardado.',
   })
-  @ApiQuery({
-    name: 'date_to',
-    required: false,
-    description: 'Fecha final en formato compatible con elTOQUE.',
-    example: '2026-05-27 23:59:01',
+  @ApiBadRequestResponse({
+    description: 'Todavía no hay ningún snapshot guardado.',
   })
   @Get()
-  async getTasas(
-    @Query('date_from') date_from?: string,
-    @Query('date_to') date_to?: string,
-  ) {
-    return this.tasasService.getTasas({ date_from, date_to });
+  async getTasas() {
+    const snapshot = this.tasasHistoryService.getUltimoSnapshot();
+
+    if (!snapshot) {
+      throw new BadRequestException(
+        'Aún no hay datos guardados. Espera al próximo snapshot del cron (cada 5 minutos).',
+      );
+    }
+
+    return snapshot;
   }
 
   @ApiOperation({
@@ -142,5 +137,15 @@ export class TasasController {
     }
 
     return variacion;
+  }
+
+  @ApiOperation({
+    summary: 'Diagnóstico de la base de datos',
+    description:
+      'Muestra cuántos registros hay guardados y el rango de fechas cubierto. Útil para verificar que el histórico no se está perdiendo entre reinicios.',
+  })
+  @Get('debug/db-info')
+  getDbInfo() {
+    return this.tasasHistoryService.getDbInfo();
   }
 }

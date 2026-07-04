@@ -13,9 +13,9 @@ export class TasasCronService {
     private readonly tasasHistoryService: TasasHistoryService,
   ) {}
 
-  // Minutos 7 y 37 de cada hora, en vez de "en punto" (:00 y :30),
-  // para no tener un patrón perfectamente predecible frente a Cloudflare.
-  @Cron('7,37 * * * *')
+  // Cada 5 minutos. Solo este cron le pega a elTOQUE;
+  // el resto de la app lee siempre desde la base de datos.
+  @Cron('*/5 * * * *')
   async guardarSnapshotPeriodico() {
     if (!acquireLock()) {
       this.logger.warn(
@@ -25,8 +25,18 @@ export class TasasCronService {
     }
 
     try {
-      // pequeño jitter aleatorio: evita que la petición salga siempre
-      // en el mismo segundo exacto
+      // Protección extra: si por algún motivo ya se guardó algo hace
+      // muy poco (ej. otra instancia terminó justo antes de que este
+      // proceso revisara el lock), no insistimos.
+      if (this.tasasHistoryService.yaSeEjecutoRecientemente(2)) {
+        this.logger.warn(
+          'Ya existe un snapshot muy reciente. Se omite esta corrida.',
+        );
+        return;
+      }
+
+      // Jitter aleatorio: evita que la petición salga siempre en el
+      // mismo segundo exacto (patrón demasiado predecible para Cloudflare).
       await new Promise((resolve) => setTimeout(resolve, Math.random() * 4000));
 
       const snapshot = await this.tasasService.getLatestSnapshot();
