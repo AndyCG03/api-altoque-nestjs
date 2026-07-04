@@ -13,6 +13,16 @@ async function bootstrap() {
     .setDescription('API proxy hacia elTOQUE para consultar tasas de cambio.')
     .setVersion('1.0.0')
     .addTag('tasas')
+    .addApiKey(
+      {
+        type: 'apiKey',
+        in: 'header',
+        name: 'x-api-key',
+        description: 'Token de elTOQUE obtenido en https://tasas-token.eltoque.com/',
+      },
+      'x-api-key',
+    )
+    .addSecurityRequirements('x-api-key')
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api', app, swaggerDocument);
