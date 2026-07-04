@@ -8,12 +8,9 @@ export interface TasaHistoricaPunto {
 
 @Injectable()
 export class TasasHistoryService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(private readonly db: DatabaseService) {}
 
-  async guardarSnapshot(
-    snapshotDate: Date,
-    tasas: Record<string, number>,
-  ) {
+  guardarSnapshot(snapshotDate: Date, tasas: Record<string, number>) {
     const entries = Object.entries(tasas)
       .filter(([, valor]) => Number.isFinite(valor))
       .map(([moneda, valor]) => ({
@@ -26,35 +23,32 @@ export class TasasHistoryService {
       return { created: 0 };
     }
 
-    const insert = this.databaseService.db.prepare(
-      'INSERT INTO tasas_historica (moneda, valor, fecha) VALUES (?, ?, ?)',
-    );
-
-    const insertMany = this.databaseService.db.transaction(
-      (rows: { moneda: string; valor: number; fecha: string }[]) => {
-        for (const row of rows) {
-          insert.run(row.moneda, row.valor, row.fecha);
-        }
-      },
-    );
-
-    insertMany(entries);
+    this.db.begin();
+    for (const entry of entries) {
+      this.db.exec(
+        'INSERT INTO tasas_historica (moneda, valor, fecha) VALUES (?, ?, ?)',
+        [entry.moneda, entry.valor, entry.fecha],
+      );
+    }
+    this.db.commit();
 
     return { created: entries.length };
   }
 
-  async getHistorial(moneda: string, desde: Date, hasta: Date) {
-    const filas = this.databaseService.db
-      .prepare(
-        'SELECT fecha, valor FROM tasas_historica WHERE moneda = ? AND fecha BETWEEN ? AND ? ORDER BY fecha ASC',
-      )
-      .all(moneda, desde.toISOString(), hasta.toISOString()) as { fecha: string; valor: number }[];
+  getHistorial(moneda: string, desde: Date, hasta: Date): TasaHistoricaPunto[] {
+    const filas = this.db.queryAll(
+      'SELECT fecha, valor FROM tasas_historica WHERE moneda = ? AND fecha BETWEEN ? AND ? ORDER BY fecha ASC',
+      [moneda, desde.toISOString(), hasta.toISOString()],
+    );
 
-    return filas.map((f) => ({ fecha: new Date(f.fecha), valor: f.valor }));
+    return filas.map((f) => ({
+      fecha: new Date(f.fecha as string),
+      valor: f.valor as number,
+    }));
   }
 
-  async getVariacion(moneda: string, desde: Date, hasta: Date) {
-    const datos = await this.getHistorial(moneda, desde, hasta);
+  getVariacion(moneda: string, desde: Date, hasta: Date) {
+    const datos = this.getHistorial(moneda, desde, hasta);
 
     if (datos.length === 0) {
       return null;
@@ -63,7 +57,8 @@ export class TasasHistoryService {
     const inicial = datos[0].valor;
     const final = datos[datos.length - 1].valor;
     const variacionAbsoluta = final - inicial;
-    const variacionPorcentual = inicial === 0 ? 0 : (variacionAbsoluta / inicial) * 100;
+    const variacionPorcentual =
+      inicial === 0 ? 0 : (variacionAbsoluta / inicial) * 100;
 
     return {
       moneda,
@@ -74,10 +69,11 @@ export class TasasHistoryService {
     };
   }
 
-  async existeRegistro(moneda: string, fecha: Date) {
-    const row = this.databaseService.db
-      .prepare('SELECT id FROM tasas_historica WHERE moneda = ? AND fecha = ? LIMIT 1')
-      .get(moneda, fecha.toISOString()) as { id: number } | undefined;
+  existeRegistro(moneda: string, fecha: Date) {
+    const row = this.db.queryOne(
+      'SELECT id FROM tasas_historica WHERE moneda = ? AND fecha = ? LIMIT 1',
+      [moneda, fecha.toISOString()],
+    );
 
     return row ?? null;
   }
