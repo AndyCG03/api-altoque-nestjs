@@ -43,9 +43,16 @@ export class TasasService {
         this.httpService.get(`${baseUrl}/v1/trmi`, {
           params: query,
           headers: {
-            accept: '*/*',
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+            Accept: 'application/json, text/plain, */*',
+            'Accept-Language': 'es-CU,es;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
+            Referer: 'https://tasas.eltoque.com/',
             Authorization: `Bearer ${token}`,
           },
+          timeout: 15_000,
+          decompress: true,
         }),
       );
 
@@ -53,11 +60,20 @@ export class TasasService {
     } catch (error) {
       const axiosError = error as AxiosError;
 
-      // Reenviamos el mismo código/mensaje de error que devuelve elTOQUE
       if (axiosError.response) {
+        const data = axiosError.response.data as string | object;
+        const esCloudflare =
+          typeof data === 'string' && data.includes('Just a moment');
+
+        if (esCloudflare) {
+          throw new BadGatewayException(
+            'Cloudflare bloqueó la petición. Se reintentará en el próximo ciclo del cron.',
+          );
+        }
+
         throw new BadGatewayException({
           statusCode: axiosError.response.status,
-          message: axiosError.response.data,
+          message: data,
         });
       }
 

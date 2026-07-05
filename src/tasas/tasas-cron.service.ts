@@ -1,10 +1,11 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TasasHistoryService } from './tasas-history.service';
 import { TasasService } from './tasas.service';
 import { acquireLock, releaseLock } from '../common/cron-lock.util';
 
-const MIN_INTERVALO_MS = 15 * 60 * 1000; // 15 minutos
-const MAX_INTERVALO_MS = 30 * 60 * 1000; // 30 minutos
+const MIN_INTERVALO_MS = 15 * 60 * 1000;
+const MAX_INTERVALO_MS = 30 * 60 * 1000;
 
 @Injectable()
 export class TasasCronService implements OnModuleInit, OnModuleDestroy {
@@ -15,11 +16,20 @@ export class TasasCronService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly tasasService: TasasService,
     private readonly tasasHistoryService: TasasHistoryService,
+    private readonly configService: ConfigService,
   ) {}
 
   onModuleInit() {
-    // Primera corrida con un pequeño delay inicial, para no disparar
-    // justo al arrancar el proceso (ej. en cada redeploy).
+    const cronHabilitado = this.configService.get<string>('CRON_ENABLED', 'false');
+
+    if (cronHabilitado !== 'true') {
+      this.logger.warn(
+        '⛔ Cron DESHABILITADO (CRON_ENABLED != true). No se harán peticiones a elTOQUE.',
+      );
+      return;
+    }
+
+    this.logger.log('✅ Cron habilitado, programando primera corrida...');
     this.programarSiguiente(this.randomEntre(30_000, 90_000));
   }
 
@@ -40,12 +50,7 @@ export class TasasCronService implements OnModuleInit, OnModuleDestroy {
     this.timeoutRef = setTimeout(async () => {
       await this.guardarSnapshotPeriodico();
 
-      // Cada vuelta calcula un intervalo NUEVO y aleatorio entre 15 y 30 min,
-      // así el patrón nunca se repite exacto.
-      const proximoIntervalo = this.randomEntre(
-        MIN_INTERVALO_MS,
-        MAX_INTERVALO_MS,
-      );
+      const proximoIntervalo = this.randomEntre(MIN_INTERVALO_MS, MAX_INTERVALO_MS);
       this.logger.log(
         `Próxima actualización en ~${Math.round(proximoIntervalo / 60000)} min`,
       );
@@ -55,17 +60,13 @@ export class TasasCronService implements OnModuleInit, OnModuleDestroy {
 
   private async guardarSnapshotPeriodico() {
     if (!acquireLock()) {
-      this.logger.warn(
-        'Ya hay otra instancia ejecutando el snapshot (lock activo). Se omite esta corrida.',
-      );
+      this.logger.warn('Ya hay otra instancia ejecutando el snapshot. Se omite.');
       return;
     }
 
     try {
       if (this.tasasHistoryService.yaSeEjecutoRecientemente(5)) {
-        this.logger.warn(
-          'Ya existe un snapshot muy reciente. Se omite esta corrida.',
-        );
+        this.logger.warn('Ya existe un snapshot muy reciente. Se omite.');
         return;
       }
 
