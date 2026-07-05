@@ -77,6 +77,8 @@ export class TasasController {
       throw new BadRequestException('Las fechas desde y hasta no son válidas');
     }
 
+    hastaDate.setUTCHours(23, 59, 59, 999);
+
     return this.tasasHistoryService.getHistorial(
       moneda.toUpperCase(),
       desdeDate,
@@ -123,6 +125,8 @@ export class TasasController {
     if (Number.isNaN(desdeDate.getTime()) || Number.isNaN(hastaDate.getTime())) {
       throw new BadRequestException('Las fechas desde y hasta no son válidas');
     }
+
+    hastaDate.setUTCHours(23, 59, 59, 999);
 
     const variacion = await this.tasasHistoryService.getVariacion(
       moneda.toUpperCase(),
