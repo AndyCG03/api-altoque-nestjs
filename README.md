@@ -1,93 +1,150 @@
-# eltoque-nest-api
+# alTOQUE — Tasas de cambio en Cuba
 
-API NestJS que actúa como proxy hacia la API de elTOQUE y guarda histórico de tasas en SQLite con Prisma.
+**Desarrollado por el Ing. Andy Clemente**
 
-## Qué hace
+Sistema completo de consulta de tasas de cambio en Cuba compuesto por una API
+NestJS y una app Flutter con widget nativo Android.
 
-- Reenvía la petición a `https://tasas.eltoque.com/v1/trmi`.
-- Agrega el token de autorización desde `.env`.
-- Guarda snapshots periódicos en SQLite.
-- Expone endpoints para consultar histórico y variación.
-- Publica documentación interactiva con Swagger.
+---
 
-## Requisitos
+## Arquitectura general
 
-- Node.js y npm instalados.
-- Un token válido de `https://tasas-token.eltoque.com/`.
+```
+┌─────────────────────────────────────────────────────┐
+│                   Flutter App                        │
+│  Tasas │ Calculadora │ Gráfica │ Opciones │ Widget   │
+└──────────────────┬──────────────────────────────────┘
+                   │ HTTP (Dio) · x-api-key
+                   ▼
+┌──────────────────────────────────────────────────────┐
+│              NestJS API (eltoque-nest-api)            │
+│                                                       │
+│  GET /tasas           → último snapshot desde SQLite  │
+│  GET /tasas/refresh   → fuerza consulta a elTOQUE     │
+│  GET /tasas/historial → puntos para gráfica           │
+│  GET /tasas/variacion → variación en un rango         │
+│  GET /tasas/debug/db-info → diagnóstico BD            │
+│                                                       │
+│  Cron cada 10–15 min → elTOQUE → SQLite              │
+└──────────────────────┬───────────────────────────────┘
+                       │ HTTPS · Bearer token
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│           tasas.eltoque.com (API pública)             │
+└──────────────────────────────────────────────────────┘
+```
 
-## Instalación
+---
+
+## API NestJS
+
+API que consulta periódicamente las tasas de [elTOQUE](https://tasas.eltoque.com),
+las almacena en SQLite (vía `sql.js`, sin compilación nativa) y las sirve sin
+depender de la disponibilidad de elTOQUE en tiempo real.
+
+### Stack
+
+| Componente | Tecnología |
+|---|---|
+| Runtime | Node.js + TypeScript |
+| Framework | NestJS 10 |
+| Base de datos | SQLite (sql.js — WASM, 0 compilación nativa) |
+| HTTP | Axios + @nestjs/axios |
+| Documentación | Swagger (OpenAPI 3) |
+| Seguridad | API Key hasheada + Rate limiting |
+| Despliegue | Hostinger / Render |
+
+### Endpoints
+
+| Endpoint | Método | Descripción |
+|---|---|---|
+| `/tasas` | GET | Último snapshot guardado desde SQLite |
+| `/tasas/refresh` | GET | Fuerza consulta a elTOQUE, guarda y devuelve datos frescos |
+| `/tasas/historial` | GET | Puntos `{ fecha, valor }` para gráfica |
+| `/tasas/variacion` | GET | Variación absoluta y porcentual en un rango |
+| `/tasas/debug/db-info` | GET | Diagnóstico de la BD (total registros, rango de fechas) |
+
+### Seguridad
+
+- **API Key**: Header `x-api-key` obligatorio. El servidor solo almacena el
+  hash SHA-256 de la clave, nunca la clave en texto plano.
+- **Rate limiting**: 30 peticiones por IP en ventana de 60 segundos.
+
+### Cron
+
+Un cron interno ejecuta `GET /v1/trmi` a elTOQUE **cada 10–15 minutos**
+(intervalo aleatorio para evitar patrones). Cada ejecución guarda un snapshot
+con todas las monedas disponibles en SQLite. Los endpoints nunca consultan a
+elTOQUE en tiempo real excepto `/tasas/refresh`.
+
+### Instalación y ejecución
 
 ```bash
 npm install
-```
-
-## Configuración
-
-1. Copia el archivo de ejemplo:
-
-```bash
 cp .env.example .env
-```
-
-2. Completa estas variables en `.env`:
-
-- `ELTOQUE_API_TOKEN`
-- `ELTOQUE_API_URL` si necesitas cambiar la base URL
-- `PORT` si quieres usar otro puerto
-- `DATABASE_URL="file:./dev.db"`
-
-## Base de datos
-
-El proyecto usa Prisma con SQLite. El modelo histórico vive en `prisma/schema.prisma` y guarda:
-
-- `moneda`
-- `valor`
-- `fecha`
-- `createdAt`
-
-## Migración
-
-```bash
-npm run prisma:migrate -- --name init
-```
-
-## Ejecutar en desarrollo
-
-```bash
+# Completar ELTOQUE_API_TOKEN, API_KEY_HASH, etc.
 npm run start:dev
 ```
 
-La API queda disponible en `http://localhost:3000`.
+Swagger disponible en `http://localhost:3000/api`.
 
-## Swagger
+---
 
-La documentación interactiva queda en `http://localhost:3000/api`.
+## Flutter App
 
-## Endpoints
+App móvil para consultar tasas de cambio (USD, EUR, MLC) con calculadora de
+divisas, gráfica histórica y widget nativo Android.
 
-### `GET /tasas`
+### Funcionalidades
 
-Devuelve las tasas más recientes o un rango específico si se envían filtros.
+| Pantalla | Descripción |
+|---|---|
+| **Tasas** | USD, EUR y MLC en tarjetas con shimmer, pull-to-refresh, badge "Caché" |
+| **Calculadora** | Conversor CUP ↔ USD/EUR/MLC (vía CUP como intermediario) |
+| **Gráfica** | Línea histórica a 7/30/90 días con tooltip y tarjeta de variación |
+| **Opciones** | Toggle modo oscuro, limpiar caché, info de la app |
+| **Widget Android** | Widget nativo con tasas actualizadas sin abrir la app |
 
-### `GET /tasas/historial`
+### Stack
 
-Devuelve una serie de puntos `{ fecha, valor }` para graficar.
+| Componente | Tecnología |
+|---|---|
+| Framework | Flutter 3.16+ |
+| Estado | BLoC (flutter_bloc) |
+| Caché | Hive |
+| HTTP | Dio |
+| Widget Android | AppWidgetProvider + HttpURLConnection (nativo, sin pub.dev) |
+| Comunicación | MethodChannel (Flutter ↔ Kotlin) |
 
-Query params:
+### Estructura
 
-- `moneda` como `USD`, `MLC`, `BTC`
-- `desde` en formato `YYYY-MM-DD`
-- `hasta` en formato `YYYY-MM-DD`
+```
+lib/
+├── main.dart
+├── app.dart
+├── core/
+│   ├── cubit/          # HistoryCubit, RatesCubit
+│   ├── models/         # RateModel + Hive adapter
+│   ├── services/       # ApiService, LocalStorageService, WidgetService
+│   └── theme/          # AppTheme (Material 3), ThemeCubit
+└── features/
+    ├── calculator/     # CalculadoraScreen
+    ├── graph/          # GraphScreen (CustomPainter)
+    ├── rates/          # RatesScreen
+    └── settings/       # SettingsScreen
+```
 
-### `GET /tasas/variacion`
+### Instalación
 
-Calcula valor inicial, final y variación absoluta/porcentual para una moneda en un rango.
+```bash
+flutter pub get
+cp .env.example .env
+# Completar API_BASE_URL y API_KEY
+flutter run
+```
 
-## Cron
+---
 
-Un cron ejecutado cada 30 minutos consulta elTOQUE y guarda un snapshot en la base de datos. Si falla la consulta, la app no se cae; solo registra el error.
+## Licencia
 
-## Notas
-
-- Respeta el límite de la API de elTOQUE: máximo 1 petición por segundo.
-- Si cambias el esquema de datos, vuelve a ejecutar la migración de Prisma.
+Proyecto privado — Todos los derechos reservados.

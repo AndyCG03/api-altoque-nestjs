@@ -4,8 +4,8 @@ import { TasasHistoryService } from './tasas-history.service';
 import { TasasService } from './tasas.service';
 import { acquireLock, releaseLock } from '../common/cron-lock.util';
 
-const MIN_INTERVALO_MS = 15 * 60 * 1000;
-const MAX_INTERVALO_MS = 30 * 60 * 1000;
+const MIN_INTERVALO_MS = 10 * 60 * 1000;
+const MAX_INTERVALO_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class TasasCronService implements OnModuleInit, OnModuleDestroy {
